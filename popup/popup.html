@@ -3,65 +3,91 @@
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="popup.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <div class="welcome-text">
-        <div id="welcome-message">Assalamualaikum</div>
-        <div class="date-info">
-          <div id="date-display">
-            Today is <span id="day-name">Monday</span>, 
-            <span id="date-value">1 January 2023</span>
+  <div class="app-wrapper">
+    <!-- Ramadan Decorations -->
+    <div class="ramadan-decor left"></div>
+    <div class="ramadan-decor right"></div>
+
+    <div class="container">
+      <div class="header">
+        <div class="welcome-text">
+          <div id="welcome-message">Assalamualaikum</div>
+          <div class="date-info">
+            <div id="date-display">
+              <span id="day-name">Monday</span>, 
+              <span id="date-value">1 January 2023</span>
+            </div>
+          </div>
+        </div>
+        <div class="clock-wrapper">
+          <div class="clock" id="current-time">
+            <span class="time">12:00:00</span>
+            <span class="ampm">PM</span>
           </div>
         </div>
       </div>
-      <div class="clock" id="current-time">
-        <span class="time">12:00:00</span>
-        <span class="ampm">PM</span>
+      
+      <div class="location-header">
+        <h1>Prayer Times <span id="location-code"></span></h1>
       </div>
-    </div>
-    <h1>Prayer Times <span id="location-code" style="font-size: 0.6em; color: #888; font-weight: normal;"></span></h1>
-    <div id="adzan-status" class="adzan-status" style="display: none;">
-      <div class="adzan-playing"> Adzan Playing</div>
-      <div class="adzan-countdown" id="adzan-countdown">--:--</div>
-      <button id="stop-adzan-btn" class="stop-adzan-btn">Stop Adzan</button>
-    </div>
-    <div id="warning-message" class="warning"></div>
-    <div id="prayer-times">
-      <table>
-        <tr>
-          <td>Subuh</td>
-          <td id="subuh-time">--:--</td>
-        </tr>
-        <tr>
-          <td>Zohor</td>
-          <td id="zohor-time">--:--</td>
-        </tr>
-        <tr>
-          <td>Asar</td>
-          <td id="asar-time">--:--</td>
-        </tr>
-        <tr>
-          <td>Maghrib</td>
-          <td id="maghrib-time">--:--</td>
-        </tr>
-        <tr>
-          <td>Isha</td>
-          <td id="isha-time">--:--</td>
-        </tr>
-      </table>
-    </div>
-    <div id="next-prayer">
-      <p>Next prayer: <span id="next-prayer-name">--</span> at <span id="next-prayer-time">--:--</span></p>
-      <p>Time remaining: <span id="countdown">--:--</span></p>
-    </div>
-    <div class="button-row">
-      <button id="refresh-btn">Refresh</button>
-      <button id="settings-btn">Settings</button>
-      <button type="button" id="theme-toggle" class="theme-toggle" title="Toggle Dark/Light Mode">
-        <span id="theme-icon">🌙</span>
-      </button>
+
+      <div id="adzan-status" class="adzan-status" style="display: none;">
+        <div class="adzan-playing">Adzan Playing</div>
+        <div class="adzan-countdown" id="adzan-countdown">--:--</div>
+        <button id="stop-adzan-btn" class="stop-adzan-btn">Stop Adzan</button>
+      </div>
+      <div id="warning-message" class="warning"></div>
+
+      <div id="next-prayer" class="next-prayer-card">
+        <div class="np-label">Upcoming Prayer</div>
+        <div class="np-details">
+          <span id="next-prayer-name" class="np-name">--</span>
+          <span id="next-prayer-time" class="np-time">--:--</span>
+        </div>
+        <div class="np-countdown">
+          Time remaining: <span id="countdown">--:--</span>
+        </div>
+      </div>
+
+      <div id="prayer-times" class="prayer-list">
+        <div class="prayer-row">
+          <span class="p-name">Subuh</span>
+          <span class="p-time" id="subuh-time">--:--</span>
+        </div>
+        <div class="prayer-row">
+          <span class="p-name">Zohor</span>
+          <span class="p-time" id="zohor-time">--:--</span>
+        </div>
+        <div class="prayer-row">
+          <span class="p-name">Asar</span>
+          <span class="p-time" id="asar-time">--:--</span>
+        </div>
+        <div class="prayer-row">
+          <span class="p-name">Maghrib</span>
+          <span class="p-time" id="maghrib-time">--:--</span>
+        </div>
+        <div class="prayer-row">
+          <span class="p-name">Isha</span>
+          <span class="p-time" id="isha-time">--:--</span>
+        </div>
+      </div>
+
+      <div class="button-row">
+        <button id="refresh-btn" class="action-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 8"/></svg>
+          Refresh
+        </button>
+        <button id="settings-btn" class="action-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
+        </button>
+        <button type="button" id="theme-toggle" class="theme-toggle action-btn icon-btn" title="Toggle Dark/Light Mode">
+          <span id="theme-icon">🌙</span>
+        </button>
+      </div>
     </div>
   </div>
   <script src="../utils/prayer-times.js"></script>

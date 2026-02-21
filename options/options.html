@@ -1,99 +1,166 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <meta charset="utf-8">
-  <link rel="stylesheet" href="options.css"/>
+  <link rel="stylesheet" href="options.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
+
 <body>
-  <div class="container">
-    <h1>Prayer Times Settings</h1>
-    
-    <form id="settings-form">
-      <div class="form-group">
-        <label for="location-select">Location (JAKIM Zone):</label>
-        <select id="location-select">
-          <option value="trg01">Kuala Terengganu, Marang (TRG01)</option>
-        </select>
+  <div class="app-wrapper">
+    <div class="ramadan-decor left"></div>
+    <div class="ramadan-decor right"></div>
+
+    <div class="container">
+      <div class="header">
+        <h1>Prayer Times Settings</h1>
+        <p class="subtitle">Customize your Adzan, Notifications, and Experience.</p>
       </div>
-      
-      <div class="form-group">
-        <label for="adzan-file">Adzan Sound File:</label>
-        <input type="file" id="adzan-file" accept="audio/*">
-        <div class="file-info" id="adzan-file-info">No file selected</div>
-        <button type="button" id="change-adzan-btn" class="change-file-btn" style="display: none;">Change Adzan File</button>
+
+      <form id="settings-form">
+        <div class="section-card">
+          <h2>Location</h2>
+          <div class="form-group">
+            <label for="location-select">Select your JAKIM Zone</label>
+            <div class="custom-select-wrapper">
+              <select id="location-select">
+                <option value="trg01">Kuala Terengganu, Marang (TRG01)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <h2>Audio & Volume</h2>
+          <div class="form-group">
+            <label for="adzan-file">Custom Adzan Sound</label>
+            <div class="file-upload-wrapper">
+              <input type="file" id="adzan-file" accept="audio/*">
+              <div class="file-info" id="adzan-file-info">No file selected</div>
+              <button type="button" id="change-adzan-btn" class="action-btn outline" style="display: none;">Change Adzan
+                File</button>
+            </div>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-text">
+              <span class="switch-title">Play Doa after Adzan</span>
+              <span class="switch-desc">Automatically play Doa once Adzan finishes</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enable-doa">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="form-group" id="doa-file-group" style="display: none;">
+            <label for="doa-file">Custom Doa Sound</label>
+            <div class="file-upload-wrapper">
+              <input type="file" id="doa-file" accept="audio/*">
+              <div class="file-info" id="doa-file-info">No file selected</div>
+              <button type="button" id="change-doa-btn" class="action-btn outline" style="display: none;">Change Doa
+                File</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="volume-header">
+              <label for="adzan-volume">Adzan Volume</label>
+              <span id="volume-value" class="volume-badge">100%</span>
+            </div>
+            <input type="range" id="adzan-volume" min="0" max="600" value="100" class="custom-range">
+            <div class="volume-info">Volume can be boosted up to 600%</div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <h2>Preferences</h2>
+          <div class="form-group switch-group">
+            <div class="switch-text">
+              <span class="switch-title">Push Notifications</span>
+              <span class="switch-desc">Get browser notifications for prayer times</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enable-notifications">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-text">
+              <span class="switch-title">Enable Badge</span>
+              <span class="switch-desc">Show next prayer countdown on the extension icon</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enable-badge">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-text">
+              <span class="switch-title">Adzan Audio</span>
+              <span class="switch-desc">Play full Adzan audio automatically at prayer times</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="enable-athan">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-text">
+              <span class="switch-title">Mute other tabs</span>
+              <span class="switch-desc">Automatically mute media in other tabs during Adzan</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="mute-tabs-during-athan">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="form-group switch-group">
+            <div class="switch-text">
+              <span class="switch-title">Developer Options</span>
+              <span class="switch-desc">Enable testing tools and debug settings</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="developer-mode">
+              <span class="slider round"></span>
+            </label>
+          </div>
+        </div>
+
+        <div id="status-message"></div>
+
+        <div class="sticky-footer">
+          <button type="submit" class="action-btn primary large">Save Settings</button>
+          <div class="secondary-actions">
+            <button type="button" id="changelog-btn" class="action-btn text">View Changelog</button>
+            <button type="button" id="feedback-btn" class="action-btn text">Leave Feedback</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="test-section" id="test-section" style="display: none;">
+        <div class="test-card">
+          <h2>Developer Testing</h2>
+          <p>Test the Adzan playback with a 10-second countdown simulation.</p>
+          <div class="test-actions">
+            <button id="test-adzan-btn" class="action-btn warning">Test Adzan (10s)</button>
+            <button id="stop-adzan-btn" class="action-btn danger" style="display: none;">Force Stop Adzan</button>
+          </div>
+          <div id="countdown-display" class="countdown-display"></div>
+        </div>
       </div>
-      
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" id="enable-doa"> Play Doa after Adzan
-        </label>
+
+      <div class="footer">
+        <p>Made with ❤️ by Nazmi &middot; Ramadan Edition</p>
       </div>
-      
-      <div class="form-group" id="doa-file-group" style="display: none;">
-        <label for="doa-file">Doa Sound File:</label>
-        <input type="file" id="doa-file" accept="audio/*">
-        <div class="file-info" id="doa-file-info">No file selected</div>
-        <button type="button" id="change-doa-btn" class="change-file-btn" style="display: none;">Change Doa File</button>
-      </div>
-      
-      <div class="form-group">
-        <label for="adzan-volume">Adzan Volume: <span id="volume-value">100%</span></label>
-        <input type="range" id="adzan-volume" min="0" max="600" value="100">
-        <div class="volume-info">Volume can be boosted up to 600%</div>
-      </div>
-      
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" id="enable-notifications"> Enable Notifications
-        </label>
-      </div>
-      
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" id="enable-badge"> Enable Badge (Show next prayer on icon)
-        </label>
-      </div>
-      
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" id="enable-athan"> Enable Adzan Audio
-        </label>
-      </div>
-      
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" id="mute-tabs-during-athan"> Mute other tabs during Adzan
-        </label>
-      </div>
-      
-      <div class="form-group">
-        <label class="checkbox-label">
-          <input type="checkbox" id="developer-mode"> Enable Developer Options
-        </label>
-      </div>
-      
-      <div id="status-message"></div>
-      
-      <div class="button-group">
-        <button type="submit">Save Settings</button>
-        <button type="button" id="changelog-btn" class="secondary-btn">View Changelog</button>
-        <button type="button" id="feedback-btn" class="secondary-btn">Leave me Feedback</button>
-      </div>
-    </form>
-    
-    <div class="test-section" id="test-section" style="display: none;">
-      <h2>Developer Options</h2>
-      <p>Click the button below to test the adzan sound with a 10-second countdown.</p>
-      <button id="test-adzan-btn">Test Adzan (10s countdown)</button>
-      <button id="stop-adzan-btn" style="display: none;">Stop Adzan</button>
-      <div id="countdown-display"></div>
-    </div>
-    
-    <div class="footer">
-      Made with ❤️ by Nazmi
     </div>
   </div>
-  
   <script src="options.js"></script>
 </body>
+
 </html>
