@@ -10,24 +10,53 @@
       box-sizing: border-box;
     }
     
+    :root {
+      --bg-start: #f4efe7;
+      --bg-end: #e6ddd0;
+      --container-bg: rgba(255, 255, 255, 0.85);
+      --container-border: rgba(13, 92, 70, 0.2);
+      --text-main: #1f2a36;
+      --text-muted: #4f6072;
+      --status-bg: rgba(13, 92, 70, 0.12);
+      --status-border: rgba(13, 92, 70, 0.2);
+      --stop-bg: #d84a4a;
+      --stop-bg-hover: #bf3e3e;
+      --stop-shadow: rgba(216, 74, 74, 0.35);
+    }
+    
+    body.dark-mode {
+      --bg-start: #0b1120;
+      --bg-end: #151f34;
+      --container-bg: rgba(21, 30, 50, 0.85);
+      --container-border: rgba(229, 193, 88, 0.25);
+      --text-main: #f7fafc;
+      --text-muted: #c3cfdd;
+      --status-bg: rgba(229, 193, 88, 0.14);
+      --status-border: rgba(229, 193, 88, 0.22);
+      --stop-bg: #e25959;
+      --stop-bg-hover: #c94d4d;
+      --stop-shadow: rgba(226, 89, 89, 0.4);
+    }
+    
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
       display: flex;
       justify-content: center;
       align-items: center;
       min-height: 100vh;
-      color: white;
+      color: var(--text-main);
+      transition: background 0.25s ease, color 0.25s ease;
     }
     
     .container {
       text-align: center;
       padding: 40px;
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--container-bg);
       backdrop-filter: blur(10px);
       border-radius: 20px;
-      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+      border: 1px solid var(--container-border);
       max-width: 500px;
       width: 90%;
     }
@@ -35,13 +64,13 @@
     h1 {
       font-size: 2.5em;
       margin-bottom: 20px;
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
     }
     
     .prayer-name {
       font-size: 1.8em;
       margin-bottom: 30px;
       font-weight: 300;
+      color: var(--text-muted);
     }
     
     .countdown-container {
@@ -58,7 +87,6 @@
       font-size: 4em;
       font-weight: bold;
       font-family: 'Courier New', monospace;
-      text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.4);
       margin: 20px 0;
     }
     
@@ -66,12 +94,13 @@
       font-size: 1.3em;
       margin: 20px 0;
       padding: 15px;
-      background: rgba(255, 255, 255, 0.2);
+      background: var(--status-bg);
       border-radius: 10px;
+      border: 1px solid var(--status-border);
     }
     
     .stop-button {
-      background: #ff4757;
+      background: var(--stop-bg);
       color: white;
       border: none;
       padding: 15px 40px;
@@ -79,14 +108,14 @@
       border-radius: 50px;
       cursor: pointer;
       transition: all 0.3s ease;
-      box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+      box-shadow: 0 4px 15px var(--stop-shadow);
       margin-top: 20px;
     }
     
     .stop-button:hover {
-      background: #ff3838;
+      background: var(--stop-bg-hover);
       transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(255, 71, 87, 0.6);
+      box-shadow: 0 6px 20px var(--stop-shadow);
     }
     
     .stop-button:active {
@@ -96,7 +125,7 @@
     .volume-info {
       margin-top: 20px;
       font-size: 0.9em;
-      opacity: 0.8;
+      color: var(--text-muted);
     }
   </style>
 </head>

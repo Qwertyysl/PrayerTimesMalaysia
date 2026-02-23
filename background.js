@@ -105,30 +105,161 @@ let audioContext = null;
 // Track which prayers have been triggered to prevent duplicates
 let triggeredPrayers = new Set();
 
-// Set up alarm to update prayer times hourly
-browser.alarms.create('updatePrayerTimes', {
-  periodInMinutes: 60 // Update every hour for real-time accuracy
-});
+const PRAYER_DEFINITIONS = [
+  { name: 'Subuh', key: 'subuh' },
+  { name: 'Zohor', key: 'zohor' },
+  { name: 'Asar', key: 'asar' },
+  { name: 'Maghrib', key: 'maghrib' },
+  { name: 'Isha', key: 'isha' }
+];
+const WARNING_MINUTES = new Set([1, 2, 3, 4, 5]);
+const MAX_TRIGGERED_KEYS = 200;
 
-// Set up alarm to check for next prayer frequently for better accuracy
-browser.alarms.create('checkNextPrayer', {
-  periodInMinutes: 1/6 // Check frequently (every 10 seconds)
-});
+const ALARM_NAMES = {
+  UPDATE_PRAYER_TIMES: 'updatePrayerTimes',
+  CHECK_NEXT_PRAYER: 'checkNextPrayer',
+  CHECK_MINUTE_WARNINGS: 'checkMinuteWarnings'
+};
 
-// Set up alarm to check for minute warnings every 10 seconds for punctual reminders
-browser.alarms.create('checkMinuteWarnings', {
-  periodInMinutes: 1/6 // Check every 10 seconds
-});
+function formatDateKey(date) {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const day = date.getDate().toString().padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatHourMinute(date) {
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function parsePrayerTime(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') {
+    return null;
+  }
+  
+  const trimmedTime = timeStr.trim();
+  const hasAmPm = trimmedTime.includes('AM') || trimmedTime.includes('PM');
+  
+  if (hasAmPm) {
+    const parts = trimmedTime.split(' ');
+    if (parts.length < 2) {
+      return null;
+    }
+    
+    const timePart = parts[0];
+    const period = parts[1];
+    const timeMatch = timePart.match(/^(\d{1,2}):(\d{2})/);
+    
+    if (!timeMatch) {
+      return null;
+    }
+    
+    let hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2], 10);
+    
+    if (period === 'PM' && hours !== 12) {
+      hours += 12;
+    } else if (period === 'AM' && hours === 12) {
+      hours = 0;
+    }
+    
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      return null;
+    }
+    
+    return { hours, minutes };
+  }
+  
+  const timeMatch = trimmedTime.match(/^(\d{1,2}):(\d{2})/);
+  if (!timeMatch) {
+    return null;
+  }
+  
+  const hours = parseInt(timeMatch[1], 10);
+  const minutes = parseInt(timeMatch[2], 10);
+  
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+  
+  return { hours, minutes };
+}
+
+function getPrayerSchedule(prayerTimes, referenceDate = new Date()) {
+  return PRAYER_DEFINITIONS
+    .map((prayer) => {
+      const timeValue = prayerTimes[prayer.key];
+      const parsedTime = parsePrayerTime(timeValue);
+      
+      if (!parsedTime) {
+        return null;
+      }
+      
+      const prayerDate = new Date(referenceDate);
+      prayerDate.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
+      
+      return {
+        name: prayer.name,
+        time: timeValue,
+        prayerDate
+      };
+    })
+    .filter(Boolean);
+}
+
+function markTriggered(triggerKey) {
+  if (triggeredPrayers.has(triggerKey)) {
+    return false;
+  }
+  
+  triggeredPrayers.add(triggerKey);
+  
+  if (triggeredPrayers.size > MAX_TRIGGERED_KEYS) {
+    const oldestKey = triggeredPrayers.values().next().value;
+    if (oldestKey) {
+      triggeredPrayers.delete(oldestKey);
+    }
+  }
+  
+  return true;
+}
+
+function isSameMinute(firstDate, secondDate) {
+  return (
+    firstDate.getFullYear() === secondDate.getFullYear() &&
+    firstDate.getMonth() === secondDate.getMonth() &&
+    firstDate.getDate() === secondDate.getDate() &&
+    firstDate.getHours() === secondDate.getHours() &&
+    firstDate.getMinutes() === secondDate.getMinutes()
+  );
+}
+
+function ensureAlarms() {
+  browser.alarms.create(ALARM_NAMES.UPDATE_PRAYER_TIMES, {
+    periodInMinutes: 60
+  });
+  
+  // Browser alarm APIs reliably support one-minute intervals.
+  browser.alarms.create(ALARM_NAMES.CHECK_NEXT_PRAYER, {
+    periodInMinutes: 1
+  });
+  
+  browser.alarms.create(ALARM_NAMES.CHECK_MINUTE_WARNINGS, {
+    periodInMinutes: 1
+  });
+}
+
+ensureAlarms();
 
 // Listen for alarm events
 browser.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'updatePrayerTimes') {
+  if (alarm.name === ALARM_NAMES.UPDATE_PRAYER_TIMES) {
     updatePrayerTimes();
-    // Clear triggered prayers when we update prayer times (new day)
-    triggeredPrayers.clear();
-  } else if (alarm.name === 'checkNextPrayer') {
+  } else if (alarm.name === ALARM_NAMES.CHECK_NEXT_PRAYER) {
     checkNextPrayer();
-  } else if (alarm.name === 'checkMinuteWarnings') {
+  } else if (alarm.name === ALARM_NAMES.CHECK_MINUTE_WARNINGS) {
     checkMinuteWarnings();
   }
 });
@@ -221,104 +352,43 @@ async function checkNextPrayer() {
       'enableDoa'
     ]);
     
-    if (result.prayerTimes) {
-      const now = new Date();
-      const currentTime = now.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        hour12: false 
+    if (!result.prayerTimes) {
+      return;
+    }
+    
+    const now = new Date();
+    
+    // Keep badge updated even when popup is not open.
+    updateBadgeText(result.prayerTimes);
+    
+    const prayerSchedule = getPrayerSchedule(result.prayerTimes, now);
+    const currentPrayer = prayerSchedule.find((prayer) => isSameMinute(now, prayer.prayerDate));
+    
+    if (!currentPrayer) {
+      return;
+    }
+    
+    const prayerKey = `${formatDateKey(now)}-prayer-${currentPrayer.name}-${formatHourMinute(currentPrayer.prayerDate)}`;
+    if (!markTriggered(prayerKey)) {
+      return;
+    }
+    
+    if (result.enableNotifications !== false) {
+      browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('icons/icon-48.png'),
+        title: 'Prayer Time',
+        message: `It's time for ${currentPrayer.name} prayer`
       });
-      
-      // Update badge with next prayer
-      updateBadgeText(result.prayerTimes);
-      
-      // Check all prayer times
-      const times = result.prayerTimes;
-      const prayerTimes = [
-        { name: 'Subuh', time: times.subuh },
-        { name: 'Zohor', time: times.zohor },
-        { name: 'Asar', time: times.asar },
-        { name: 'Maghrib', time: times.maghrib },
-        { name: 'Isha', time: times.isha }
-      ];
-      
-      // Check if current time is within 10 seconds before prayer time (for respect mode + adzan)
-      const currentPrayer = prayerTimes.find(prayer => {
-        // Handle both 12-hour and 24-hour formats
-        let prayerTimeToCompare = prayer.time;
-        
-        // If it's 12-hour format, convert to 24-hour for comparison
-        if (prayer.time.includes('AM') || prayer.time.includes('PM')) {
-          const prayerTimeParts = prayer.time.split(' ');
-          const time = prayerTimeParts[0];
-          const period = prayerTimeParts[1];
-          
-          let [hours, minutes] = time.split(':').map(Number);
-          
-          // Convert to 24-hour format
-          if (period === 'PM' && hours !== 12) {
-            hours += 12;
-          } else if (period === 'AM' && hours === 12) {
-            hours = 0;
-          }
-          
-          prayerTimeToCompare = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-        } else {
-          // Already in 24-hour format, just extract the time part
-          prayerTimeToCompare = prayer.time;
-        }
-        
-        // Extract just the HH:MM part for comparison
-        const [prayerHours, prayerMinutes] = prayerTimeToCompare.split(':');
-        
-        // Create a Date object for the prayer time today
-        const prayerTimeDate = new Date();
-        prayerTimeDate.setHours(parseInt(prayerHours), parseInt(prayerMinutes), 0, 0);
-        
-        // Check if current time is within 10 seconds before prayer time
-        // This ensures we catch it with our 10-second check interval
-        const timeDifference = prayerTimeDate.getTime() - now.getTime();
-        return timeDifference >= 0 && timeDifference <= 10000; // 0-10 seconds before prayer time
-      });
-      
-      if (currentPrayer) {
-        // Create a unique key for this prayer with current timestamp (to prevent rapid re-triggering)
-        const now = new Date();
-        const currentMinute = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-        const prayerKey = `${currentPrayer.name}-${currentMinute}`;
-        
-        // Check if we've already triggered this prayer in this minute
-        if (!triggeredPrayers.has(prayerKey)) {
-          // Mark this prayer as triggered for this minute
-          triggeredPrayers.add(prayerKey);
-          
-          // Clean up old entries (keep only last 10 entries to prevent memory leak)
-          if (triggeredPrayers.size > 10) {
-            const entries = Array.from(triggeredPrayers);
-            triggeredPrayers.delete(entries[0]);
-          }
-          
-          // Show notification if enabled
-          if (result.enableNotifications !== false) {
-            browser.notifications.create({
-              type: 'basic',
-              iconUrl: browser.runtime.getURL('icons/icon-48.png'),
-              title: 'Prayer Time',
-              message: `It's time for ${currentPrayer.name} prayer`
-            });
-          }
-          
-          // Play adzan sound if enabled
-          if (result.enableAthan === true) {
-            playAdzanSound(
-              result.muteTabsDuringAthan, 
-              result.adzanVolume,
-              currentPrayer.name,
-              result.enableDoa
-            );
-          }
-        }
-      }
+    }
+    
+    if (result.enableAthan === true) {
+      playAdzanSound(
+        result.muteTabsDuringAthan,
+        result.adzanVolume,
+        currentPrayer.name,
+        result.enableDoa
+      );
     }
   } catch (error) {
     console.error('Error checking next prayer:', error);
@@ -338,83 +408,41 @@ async function checkMinuteWarnings() {
       return;
     }
     
-    if (result.prayerTimes) {
-      const now = new Date();
-      const times = result.prayerTimes;
-      const prayerTimes = [
-        { name: 'Subuh', time: times.subuh },
-        { name: 'Zohor', time: times.zohor },
-        { name: 'Asar', time: times.asar },
-        { name: 'Maghrib', time: times.maghrib },
-        { name: 'Isha', time: times.isha }
-      ];
+    if (!result.prayerTimes) {
+      return;
+    }
+    
+    const now = new Date();
+    const prayerSchedule = getPrayerSchedule(result.prayerTimes, now);
+    
+    for (const prayer of prayerSchedule) {
+      const nextPrayerTime = new Date(prayer.prayerDate);
       
-      // Check for 5, 4, 3, 2, and 1 minute warnings
-      const minutesToCheck = [5, 4, 3, 2, 1];
-      
-      for (const minutes of minutesToCheck) {
-        const futureTime = new Date(now.getTime() + minutes * 60000);
-        const warningTime = futureTime.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit', 
-          hour12: false 
-        });
-        
-        // Check if this future time matches any prayer time
-        const upcomingPrayer = prayerTimes.find(prayer => {
-          // Handle both 12-hour and 24-hour formats
-          let prayerTimeToCompare = prayer.time;
-          
-          // If it's 12-hour format, convert to 24-hour for comparison
-          if (prayer.time.includes('AM') || prayer.time.includes('PM')) {
-            const prayerTimeParts = prayer.time.split(' ');
-            const time = prayerTimeParts[0];
-            const period = prayerTimeParts[1];
-            
-            let [hours, mins] = time.split(':').map(Number);
-            
-            // Convert to 24-hour format
-            if (period === 'PM' && hours !== 12) {
-              hours += 12;
-            } else if (period === 'AM' && hours === 12) {
-              hours = 0;
-            }
-            
-            prayerTimeToCompare = `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-          } else {
-            // Already in 24-hour format, just extract the time part
-            prayerTimeToCompare = prayer.time;
-          }
-          
-          // Extract just the HH:MM part for comparison
-          const [prayerHours, prayerMinutes] = prayerTimeToCompare.split(':');
-          const prayerTime24 = `${prayerHours}:${prayerMinutes}`;
-          return prayerTime24 === warningTime;
-        });
-        
-        if (upcomingPrayer) {
-          // Create unique key to prevent duplicate notifications
-          const warningKey = `${upcomingPrayer.name}-${minutes}min-${warningTime}`;
-          
-          if (!triggeredPrayers.has(warningKey)) {
-            triggeredPrayers.add(warningKey);
-            
-            // Clean up old entries
-            if (triggeredPrayers.size > 20) {
-              const entries = Array.from(triggeredPrayers);
-              triggeredPrayers.delete(entries[0]);
-            }
-            
-            // Show warning notification
-            browser.notifications.create({
-              type: 'basic',
-              iconUrl: browser.runtime.getURL('icons/icon-48.png'),
-              title: 'Prayer Time Reminder',
-              message: `${upcomingPrayer.name} prayer in ${minutes} minute${minutes > 1 ? 's' : ''}`
-            });
-          }
-        }
+      if (nextPrayerTime.getTime() <= now.getTime()) {
+        nextPrayerTime.setDate(nextPrayerTime.getDate() + 1);
       }
+      
+      const diffMs = nextPrayerTime.getTime() - now.getTime();
+      if (diffMs <= 0 || diffMs > 5 * 60000) {
+        continue;
+      }
+      
+      const minutesRemaining = Math.ceil(diffMs / 60000);
+      if (!WARNING_MINUTES.has(minutesRemaining)) {
+        continue;
+      }
+      
+      const warningKey = `${formatDateKey(nextPrayerTime)}-warning-${prayer.name}-${minutesRemaining}`;
+      if (!markTriggered(warningKey)) {
+        continue;
+      }
+      
+      browser.notifications.create({
+        type: 'basic',
+        iconUrl: browser.runtime.getURL('icons/icon-48.png'),
+        title: 'Prayer Time Reminder',
+        message: `${prayer.name} prayer in ${minutesRemaining} minute${minutesRemaining > 1 ? 's' : ''}`
+      });
     }
   } catch (error) {
     console.error('Error checking minute warnings:', error);
@@ -482,12 +510,26 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
       `?volume=${adzanVolume}&prayer=${encodeURIComponent(prayerName)}&enableDoa=${enableDoa}`;
     
     // Open adzan player in a new tab
-    const tab = await browser.tabs.create({
-      url: adzanPlayerUrl,
-      active: true
-    });
-    
-    adzanTabId = tab.id;
+    try {
+      const tab = await browser.tabs.create({
+        url: adzanPlayerUrl,
+        active: true
+      });
+      
+      adzanTabId = tab.id;
+    } catch (tabCreateError) {
+      // Fallback for cases where no browser window is currently available.
+      const createdWindow = await browser.windows.create({
+        url: adzanPlayerUrl,
+        type: 'popup'
+      });
+      
+      if (createdWindow && createdWindow.tabs && createdWindow.tabs.length > 0) {
+        adzanTabId = createdWindow.tabs[0].id;
+      } else {
+        throw tabCreateError;
+      }
+    }
     
   } catch (error) {
     console.error('Error playing adzan sound:', error);
@@ -626,43 +668,10 @@ async function unmuteTabs(tabIds) {
   }
 }
 
-// Clear triggered prayers at midnight
-function scheduleMiddnightReset() {
-  const now = new Date();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(0, 0, 0, 0);
-  
-  const msUntilMidnight = tomorrow.getTime() - now.getTime();
-  
-  setTimeout(() => {
-    triggeredPrayers.clear();
-    // Schedule next midnight reset
-    scheduleMiddnightReset();
-  }, msUntilMidnight);
-}
-
-// Initialize on extension install
-browser.runtime.onInstalled.addListener(() => {
-  updatePrayerTimes();
-  scheduleMiddnightReset();
-});
-
-// Initialize on extension startup
-browser.runtime.onStartup.addListener(async () => {
-  
-  // Load prayer times from storage and update badge
-  const result = await browser.storage.local.get('prayerTimes');
-  if (result.prayerTimes) {
-    updateBadgeText(result.prayerTimes);
-  }
-  
-  scheduleMiddnightReset();
-});
-
-// Initialize badge immediately when script loads
-(async function initializeBadge() {
+async function initializeBackground() {
   try {
+    ensureAlarms();
+    
     const result = await browser.storage.local.get('prayerTimes');
     
     if (result.prayerTimes) {
@@ -671,7 +680,26 @@ browser.runtime.onStartup.addListener(async () => {
       // Trigger initial update
       await updatePrayerTimes();
     }
+    
+    // Run checks once immediately in case alarms were delayed.
+    await checkMinuteWarnings();
+    await checkNextPrayer();
   } catch (error) {
-    console.error('Error initializing badge:', error);
+    console.error('Error initializing background:', error);
   }
-})();
+}
+
+// Initialize on extension install
+browser.runtime.onInstalled.addListener(() => {
+  triggeredPrayers.clear();
+  initializeBackground();
+});
+
+// Initialize on extension startup
+browser.runtime.onStartup.addListener(() => {
+  triggeredPrayers.clear();
+  initializeBackground();
+});
+
+// Initialize immediately when script loads
+initializeBackground();

@@ -16,6 +16,24 @@ const enableDoa = urlParams.get('enableDoa') === 'true';
 // Update UI with prayer name
 document.getElementById('prayer-name').textContent = `${prayerName} Prayer`;
 
+async function applyThemeFromStorage() {
+  try {
+    const result = await browser.storage.local.get('darkMode');
+    const darkMode = result.darkMode === true;
+    document.body.classList.toggle('dark-mode', darkMode);
+  } catch (error) {
+    console.error('Error applying theme in adzan player:', error);
+  }
+}
+
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.darkMode) {
+    document.body.classList.toggle('dark-mode', changes.darkMode.newValue === true);
+  }
+});
+
+applyThemeFromStorage();
+
 // Initialize and play adzan
 async function playAdzan() {
   try {
@@ -349,5 +367,6 @@ async function playDoa() {
 
 // Start playing when page loads
 window.addEventListener('load', () => {
+  applyThemeFromStorage();
   playAdzan();
 });
