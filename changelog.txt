@@ -287,3 +287,33 @@
   - Tabs remain paused during adzan and doa playback
   - All media resumes after completion
 - Perfect synchronization: respect mode + adzan timing = prayer time arrival
+
+## Version 4.6 - Adzan Playback Reliability Overhaul 🔧
+- **FIXED: Media not resuming after adzan**
+  - Added `tabs.onRemoved` listener to reliably detect when adzan tab is closed
+  - Previously relied on `beforeunload` messages which are unreliable in extensions
+  - Media (YouTube, Spotify, etc.) now always resumes after adzan finishes or tab is closed
+- **FIXED: Duplicate adzan triggering**
+  - Added sentinel guard (`ADZAN_TAB_PENDING`) to prevent race condition
+  - Previously, slow tab creation could allow a second adzan to fire simultaneously
+- **FIXED: Doa metadata loading could hang forever**
+  - Added 5-second timeout to doa metadata loading (matching adzan behavior)
+  - Corrupted or invalid doa files no longer cause the tab to hang indefinitely
+- **FIXED: Tabs permanently muted after errors**
+  - Reset `mutedTabs` and `pausedTabs` arrays at start of each adzan session
+  - Stale entries from previous sessions no longer leak across playback cycles
+- **FIXED: Background page suspension killing unmute timer**
+  - Replaced `setTimeout` with `browser.alarms` for unmute scheduling
+  - Non-persistent background pages (`"persistent": false`) can now reliably unmute tabs
+- **FIXED: Double `adzanFinished` messages**
+  - Refactored to named event handlers (`onAdzanEnded`, `onDoaEnded`) to prevent listener stacking
+  - Added `hasNotifiedFinish` flag to guarantee only one finish notification is sent
+  - Old event listeners are properly removed before adding new ones during adzan→doa transition
+- **FIXED: Audio context memory leak on doa errors**
+  - Properly close and clean up `AudioContext`, `sourceNode`, and `gainNode` on error paths
+- **Improved: Only track tabs with actual media**
+  - `pausedTabs` now only includes tabs where media was actually paused or tab was audible
+  - Reduces unnecessary work during media resume phase
+- **Improved: Cleaner state management in `stopAdzan()`**
+  - State cleared before tab removal to prevent `onRemoved` listener from double-triggering cleanup
+  - Cancel pending unmute alarm when manually stopping adzan

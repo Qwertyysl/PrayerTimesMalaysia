@@ -261,6 +261,9 @@ browser.alarms.onAlarm.addListener((alarm) => {
     checkNextPrayer();
   } else if (alarm.name === ALARM_NAMES.CHECK_MINUTE_WARNINGS) {
     checkMinuteWarnings();
+  } else if (alarm.name === UNMUTE_ALARM) {
+    // Fired ~10 seconds after adzan finishes to resume media playback.
+    unpauseMediaAndUnmuteTabs();
   }
 });
 
@@ -338,7 +341,7 @@ async function updateBadgeText(prayerTimes) {
 // Check if it's time for the next prayer
 async function checkNextPrayer() {
   try {
-    // Don't trigger new adzan if one is already playing
+    // Don't trigger new adzan if one is already playing or being created
     if (adzanTabId !== null) {
       return;
     }
@@ -453,16 +456,31 @@ async function checkMinuteWarnings() {
 let currentAdzanAudio = null;
 let mutedTabs = [];
 let pausedTabs = [];
-let unmuteTimeout = null;
 let adzanNotificationId = null;
 let adzanTabId = null;
 let adzanStartTime = null;
 
+// Sentinel value used to guard against race conditions between
+// the moment we decide to play adzan and the async tab-creation.
+const ADZAN_TAB_PENDING = -1;
+
+// Name for the alarm used to unmute tabs after adzan finishes.
+const UNMUTE_ALARM = 'unmuteTabsAfterAdzan';
+
 // Play adzan sound by opening a dedicated tab
 async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = '', enableDoa = false) {
   try {
-    // Store adzan start time
+    // Guard: set sentinel immediately to prevent checkNextPrayer from
+    // firing a second adzan while we are awaiting tab creation.
+    adzanTabId = ADZAN_TAB_PENDING;
     adzanStartTime = Date.now();
+    
+    // Reset arrays to discard any stale entries from a previous session.
+    mutedTabs = [];
+    pausedTabs = [];
+    
+    // Cancel any pending unmute alarm from a prior adzan.
+    browser.alarms.clear(UNMUTE_ALARM);
     
     // Pause media in tabs FIRST if requested (respect mode - before adzan tab opens)
     if (muteTabs) {
@@ -471,8 +489,9 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
         
         for (const currentTab of tabs) {
           try {
-            // Execute script to pause all media elements
-            await browser.tabs.executeScript(currentTab.id, {
+            // Execute script to pause all media elements.
+            // The injected code returns how many elements were paused.
+            const results = await browser.tabs.executeScript(currentTab.id, {
               code: `
                 (function() {
                   const mediaElements = document.querySelectorAll('video, audio');
@@ -489,15 +508,20 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
               `
             });
             
+            const pausedCount = (results && results[0]) || 0;
+            
             // Also mute the tab as backup
             if (currentTab.audible) {
               await browser.tabs.update(currentTab.id, { muted: true });
               mutedTabs.push(currentTab.id);
             }
             
-            pausedTabs.push(currentTab.id);
+            // Only track this tab if media was actually paused or tab was muted
+            if (pausedCount > 0 || currentTab.audible) {
+              pausedTabs.push(currentTab.id);
+            }
           } catch (tabError) {
-            // Silently handle tab errors
+            // Silently handle tab errors (e.g. privileged pages)
           }
         }
       } catch (pauseError) {
@@ -527,32 +551,44 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
       if (createdWindow && createdWindow.tabs && createdWindow.tabs.length > 0) {
         adzanTabId = createdWindow.tabs[0].id;
       } else {
+        // Tab creation failed completely — release the sentinel.
+        adzanTabId = null;
         throw tabCreateError;
       }
     }
     
   } catch (error) {
     console.error('Error playing adzan sound:', error);
+    adzanTabId = null;
+    adzanStartTime = null;
     // Make sure to unmute tabs even if there's an error
-    await unmuteTabsAfterDelay();
+    await unpauseMediaAndUnmuteTabs();
   }
 }
 
 // Stop adzan playback
 async function stopAdzan() {
   try {
-    // Close adzan tab if open
-    if (adzanTabId) {
-      try {
-        await browser.tabs.remove(adzanTabId);
-      } catch (tabError) {
-        // Silently handle tab errors
-      }
-      adzanTabId = null;
-    }
+    const tabToClose = adzanTabId;
     
-    // Clear start time
+    // Clear state first so that the onRemoved listener (which also
+    // fires when we programmatically close the tab) doesn't double-
+    // trigger the cleanup.
+    adzanTabId = null;
     adzanStartTime = null;
+    adzanTotalDuration = 0;
+    
+    // Cancel pending unmute alarm
+    browser.alarms.clear(UNMUTE_ALARM);
+    
+    // Close adzan tab if open
+    if (tabToClose && tabToClose !== ADZAN_TAB_PENDING) {
+      try {
+        await browser.tabs.remove(tabToClose);
+      } catch (tabError) {
+        // Tab may already be closed — that's fine.
+      }
+    }
     
     // Close the notification
     if (adzanNotificationId) {
@@ -573,18 +609,27 @@ let adzanTotalDuration = 0;
 // Listen for messages from adzan player
 browser.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'adzanFinished') {
+    // The adzan player tab signals completion.
+    // Close the tab (if still open) and schedule media resume.
+    const tabToClose = adzanTabId;
     adzanTabId = null;
     adzanStartTime = null;
     adzanTotalDuration = 0;
-    unmuteTabsAfterDelay();
+    
+    if (tabToClose && tabToClose !== ADZAN_TAB_PENDING) {
+      browser.tabs.remove(tabToClose).catch(() => {});
+    }
+    
+    scheduleUnmuteAlarm();
   } else if (message.type === 'adzanStarted') {
     // Store the total duration and reset start time when adzan/doa starts
     adzanTotalDuration = message.duration || 0;
     adzanStartTime = Date.now(); // Reset start time for accurate countdown
   } else if (message.type === 'getAdzanStatus') {
     // Return adzan status to popup
+    const isPlaying = adzanTabId !== null && adzanTabId !== ADZAN_TAB_PENDING;
     return Promise.resolve({
-      isPlaying: adzanTabId !== null,
+      isPlaying: isPlaying || adzanTabId === ADZAN_TAB_PENDING,
       startTime: adzanStartTime,
       tabId: adzanTabId,
       totalDuration: adzanTotalDuration
@@ -594,6 +639,19 @@ browser.runtime.onMessage.addListener((message, sender) => {
   } else if (message.type === 'updatePrayerTimes') {
     // Update prayer times when location changes
     updatePrayerTimes();
+  }
+});
+
+// Detect adzan tab being closed manually by the user.
+// This is the RELIABLE way to know the tab is gone — we do NOT rely on
+// beforeunload messages, which are unreliable in extensions.
+browser.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === adzanTabId) {
+    console.log('Adzan tab was closed (tab ID:', tabId, ')');
+    adzanTabId = null;
+    adzanStartTime = null;
+    adzanTotalDuration = 0;
+    scheduleUnmuteAlarm();
   }
 });
 
@@ -635,22 +693,13 @@ async function unpauseMediaAndUnmuteTabs() {
   }
 }
 
-// Unmute tabs after a 10-second delay
-async function unmuteTabsAfterDelay() {
-  try {
-    // Clear any existing unmute timeout
-    if (unmuteTimeout) {
-      clearTimeout(unmuteTimeout);
-      unmuteTimeout = null;
-    }
-    
-    // Schedule automatic unpausing and unmuting in 10 seconds
-    unmuteTimeout = setTimeout(async () => {
-      await unpauseMediaAndUnmuteTabs();
-    }, 10000); // 10 seconds
-  } catch (error) {
-    console.error('Error scheduling unmute:', error);
-  }
+// Schedule an alarm to unmute/unpause tabs.
+// Using browser.alarms instead of setTimeout because background pages
+// with "persistent": false can be suspended, killing any pending setTimeout.
+function scheduleUnmuteAlarm() {
+  // delayInMinutes minimum is implementation-dependent; Firefox allows
+  // fractional values.  0.15 ≈ 9 seconds — close enough to the old 10s.
+  browser.alarms.create(UNMUTE_ALARM, { delayInMinutes: 0.15 });
 }
 
 // Unmute previously muted tabs
