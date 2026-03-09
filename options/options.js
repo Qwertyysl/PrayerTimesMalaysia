@@ -25,6 +25,11 @@ document.addEventListener('DOMContentLoaded', function() {
   testBtn.addEventListener('click', function() {
     testAdzan();
   });
+
+  const testMuteUnmuteBtn = document.getElementById('test-mute-unmute-btn');
+  testMuteUnmuteBtn.addEventListener('click', function() {
+    testTabMuteUnmute();
+  });
   
   // Set up stop adzan button
   const stopBtn = document.getElementById('stop-adzan-btn');
@@ -434,6 +439,8 @@ let testAudio = null;
 let mutedTabs = [];
 let countdownInterval = null;
 let unmuteTimeout = null;
+let muteUnmuteTestTimeout = null;
+let muteUnmuteTestTabs = [];
 
 // Test adzan with 10s countdown
 function testAdzan() {
@@ -494,6 +501,53 @@ function stopAdzan() {
   // Re-enable buttons
   testBtn.disabled = false;
   stopBtn.style.display = 'none';
+}
+
+async function testTabMuteUnmute() {
+  const countdownDisplay = document.getElementById('countdown-display');
+  const testMuteUnmuteBtn = document.getElementById('test-mute-unmute-btn');
+
+  if (muteUnmuteTestTimeout) {
+    countdownDisplay.textContent = 'Mute/unmute test is already running...';
+    return;
+  }
+
+  if (countdownInterval || testAudio) {
+    countdownDisplay.textContent = 'Stop the Adzan test before testing tab mute/unmute.';
+    return;
+  }
+
+  try {
+    testMuteUnmuteBtn.disabled = true;
+    countdownDisplay.textContent = 'Finding audible tabs to mute...';
+
+    muteUnmuteTestTabs = await muteAudibleTabsExcludingCurrentTab();
+
+    if (muteUnmuteTestTabs.length === 0) {
+      countdownDisplay.textContent = 'No other audible tabs found to test.';
+      testMuteUnmuteBtn.disabled = false;
+      return;
+    }
+
+    countdownDisplay.textContent = `Muted ${muteUnmuteTestTabs.length} tab(s). Unmuting in 5 seconds...`;
+
+    muteUnmuteTestTimeout = setTimeout(async () => {
+      await unmuteSpecificTabs(muteUnmuteTestTabs);
+      countdownDisplay.textContent = `Unmuted ${muteUnmuteTestTabs.length} tab(s). Test completed.`;
+      muteUnmuteTestTabs = [];
+      muteUnmuteTestTimeout = null;
+      testMuteUnmuteBtn.disabled = false;
+    }, 5000);
+  } catch (error) {
+    console.error('Error running mute/unmute test:', error);
+    countdownDisplay.textContent = 'Mute/unmute test failed.';
+    muteUnmuteTestTabs = [];
+    if (muteUnmuteTestTimeout) {
+      clearTimeout(muteUnmuteTestTimeout);
+      muteUnmuteTestTimeout = null;
+    }
+    testMuteUnmuteBtn.disabled = false;
+  }
 }
 
 // Play adzan sound with tab muting for test and volume boosting
@@ -588,37 +642,7 @@ async function playAdzanSound() {
 async function muteAudioTabsForTest() {
   try {
     console.log('Muting audio tabs for test (excluding current tab)...');
-    mutedTabs = []; // Reset muted tabs array
-    
-    // Get current tab ID
-    let currentTabId = null;
-    try {
-      const currentTabs = await browser.tabs.query({ active: true, currentWindow: true });
-      if (currentTabs && currentTabs.length > 0) {
-        currentTabId = currentTabs[0].id;
-      }
-    } catch (tabError) {
-      console.warn('Could not get current tab ID:', tabError);
-    }
-    
-    // Get all tabs
-    const tabs = await browser.tabs.query({});
-    
-    // Mute only tabs that are playing audio and are not the current tab
-    for (const tab of tabs) {
-      // Skip the current tab and tabs that are not audible
-      if ((tab.id === currentTabId) || (!tab.audible)) {
-        continue;
-      }
-      
-      try {
-        await browser.tabs.update(tab.id, { muted: true });
-        mutedTabs.push(tab.id);
-        console.log(`Muted audio tab ${tab.id} for test`);
-      } catch (tabError) {
-        console.warn(`Could not mute tab ${tab.id}:`, tabError);
-      }
-    }
+    mutedTabs = await muteAudibleTabsExcludingCurrentTab();
     
     console.log(`Muted ${mutedTabs.length} audio tabs during test adzan`);
   } catch (muteError) {
@@ -626,24 +650,62 @@ async function muteAudioTabsForTest() {
   }
 }
 
+async function muteAudibleTabsExcludingCurrentTab() {
+  const mutedTabIds = [];
+
+  // Get current tab ID
+  let currentTabId = null;
+  try {
+    const currentTabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (currentTabs && currentTabs.length > 0) {
+      currentTabId = currentTabs[0].id;
+    }
+  } catch (tabError) {
+    console.warn('Could not get current tab ID:', tabError);
+  }
+
+  // Get all tabs
+  const tabs = await browser.tabs.query({});
+
+  for (const tab of tabs) {
+    if ((tab.id === currentTabId) || (!tab.audible)) {
+      continue;
+    }
+
+    try {
+      await browser.tabs.update(tab.id, { muted: true });
+      mutedTabIds.push(tab.id);
+      console.log(`Muted audio tab ${tab.id} for test`);
+    } catch (tabError) {
+      console.warn(`Could not mute tab ${tab.id}:`, tabError);
+    }
+  }
+
+  return mutedTabIds;
+}
+
 // Unmute tabs after test
 async function unmuteTestTabs() {
   try {
     if (mutedTabs.length > 0) {
       console.log('Unmuting tabs after test...');
-      for (const tabId of mutedTabs) {
-        try {
-          await browser.tabs.update(tabId, { muted: false });
-          console.log(`Unmuted tab ${tabId} after test`);
-        } catch (tabError) {
-          console.warn(`Could not unmute tab ${tabId}:`, tabError);
-        }
-      }
+      await unmuteSpecificTabs(mutedTabs);
       console.log(`Unmuted ${mutedTabs.length} tabs after test adzan`);
       mutedTabs = []; // Clear the array
     }
   } catch (unmuteError) {
     console.error('Error unmuting tabs after test:', unmuteError);
+  }
+}
+
+async function unmuteSpecificTabs(tabIds) {
+  for (const tabId of tabIds) {
+    try {
+      await browser.tabs.update(tabId, { muted: false });
+      console.log(`Unmuted tab ${tabId} after test`);
+    } catch (tabError) {
+      console.warn(`Could not unmute tab ${tabId}:`, tabError);
+    }
   }
 }
 

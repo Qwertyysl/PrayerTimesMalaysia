@@ -341,6 +341,7 @@ async function updateBadgeText(prayerTimes) {
 // Check if it's time for the next prayer
 async function checkNextPrayer() {
   try {
+    await restoreAdzanSessionState();
     // Don't trigger new adzan if one is already playing or being created
     if (adzanTabId !== null) {
       return;
@@ -459,6 +460,7 @@ let pausedTabs = [];
 let adzanNotificationId = null;
 let adzanTabId = null;
 let adzanStartTime = null;
+const ADZAN_SESSION_STORAGE_KEY = 'adzanSessionState';
 
 // Sentinel value used to guard against race conditions between
 // the moment we decide to play adzan and the async tab-creation.
@@ -466,6 +468,88 @@ const ADZAN_TAB_PENDING = -1;
 
 // Name for the alarm used to unmute tabs after adzan finishes.
 const UNMUTE_ALARM = 'unmuteTabsAfterAdzan';
+
+function normalizeTabIdList(tabIds) {
+  if (!Array.isArray(tabIds)) {
+    return [];
+  }
+  
+  return [...new Set(
+    tabIds
+      .map((tabId) => Number(tabId))
+      .filter((tabId) => Number.isInteger(tabId) && tabId >= 0)
+  )];
+}
+
+function syncAdzanSessionState(state = {}) {
+  mutedTabs = normalizeTabIdList(state.mutedTabs);
+  pausedTabs = normalizeTabIdList(state.pausedTabs);
+  adzanNotificationId = state.adzanNotificationId || null;
+  adzanTabId = state.adzanTabId === ADZAN_TAB_PENDING || Number.isInteger(state.adzanTabId)
+    ? state.adzanTabId
+    : null;
+  adzanStartTime = typeof state.adzanStartTime === 'number' ? state.adzanStartTime : null;
+  adzanTotalDuration = typeof state.adzanTotalDuration === 'number' ? state.adzanTotalDuration : 0;
+}
+
+function getAdzanSessionState() {
+  return {
+    mutedTabs: [...mutedTabs],
+    pausedTabs: [...pausedTabs],
+    adzanNotificationId,
+    adzanTabId,
+    adzanStartTime,
+    adzanTotalDuration
+  };
+}
+
+async function restoreAdzanSessionState() {
+  try {
+    const result = await browser.storage.local.get(ADZAN_SESSION_STORAGE_KEY);
+    if (result && result[ADZAN_SESSION_STORAGE_KEY]) {
+      syncAdzanSessionState(result[ADZAN_SESSION_STORAGE_KEY]);
+
+      let shouldPersist = false;
+
+      if (adzanTabId === ADZAN_TAB_PENDING) {
+        const adzanSessionAge = adzanStartTime ? Date.now() - adzanStartTime : Infinity;
+        if (adzanSessionAge > 30000) {
+          adzanTabId = null;
+          adzanStartTime = null;
+          adzanTotalDuration = 0;
+          shouldPersist = true;
+        }
+      } else if (Number.isInteger(adzanTabId) && adzanTabId >= 0) {
+        try {
+          await browser.tabs.get(adzanTabId);
+        } catch (tabError) {
+          adzanTabId = null;
+          adzanStartTime = null;
+          adzanTotalDuration = 0;
+          shouldPersist = true;
+        }
+      }
+
+      if (shouldPersist) {
+        await persistAdzanSessionState();
+      }
+    }
+  } catch (error) {
+    console.error('Error restoring adzan session state:', error);
+  }
+  
+  return getAdzanSessionState();
+}
+
+async function persistAdzanSessionState() {
+  try {
+    await browser.storage.local.set({
+      [ADZAN_SESSION_STORAGE_KEY]: getAdzanSessionState()
+    });
+  } catch (error) {
+    console.error('Error persisting adzan session state:', error);
+  }
+}
 
 // Play adzan sound by opening a dedicated tab
 async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = '', enableDoa = false) {
@@ -478,6 +562,8 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
     // Reset arrays to discard any stale entries from a previous session.
     mutedTabs = [];
     pausedTabs = [];
+    adzanTotalDuration = 0;
+    await persistAdzanSessionState();
     
     // Cancel any pending unmute alarm from a prior adzan.
     browser.alarms.clear(UNMUTE_ALARM);
@@ -527,6 +613,8 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
       } catch (pauseError) {
         console.error('Error pausing media in tabs:', pauseError);
       }
+
+      await persistAdzanSessionState();
     }
     
     // Create adzan player HTML page (after tabs are paused)
@@ -541,6 +629,7 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
       });
       
       adzanTabId = tab.id;
+      await persistAdzanSessionState();
     } catch (tabCreateError) {
       // Fallback for cases where no browser window is currently available.
       const createdWindow = await browser.windows.create({
@@ -550,6 +639,7 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
       
       if (createdWindow && createdWindow.tabs && createdWindow.tabs.length > 0) {
         adzanTabId = createdWindow.tabs[0].id;
+        await persistAdzanSessionState();
       } else {
         // Tab creation failed completely — release the sentinel.
         adzanTabId = null;
@@ -561,6 +651,8 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
     console.error('Error playing adzan sound:', error);
     adzanTabId = null;
     adzanStartTime = null;
+    adzanTotalDuration = 0;
+    await persistAdzanSessionState();
     // Make sure to unmute tabs even if there's an error
     await unpauseMediaAndUnmuteTabs();
   }
@@ -569,6 +661,7 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
 // Stop adzan playback
 async function stopAdzan() {
   try {
+    await restoreAdzanSessionState();
     const tabToClose = adzanTabId;
     
     // Clear state first so that the onRemoved listener (which also
@@ -577,6 +670,7 @@ async function stopAdzan() {
     adzanTabId = null;
     adzanStartTime = null;
     adzanTotalDuration = 0;
+    await persistAdzanSessionState();
     
     // Cancel pending unmute alarm
     browser.alarms.clear(UNMUTE_ALARM);
@@ -607,14 +701,16 @@ async function stopAdzan() {
 let adzanTotalDuration = 0;
 
 // Listen for messages from adzan player
-browser.runtime.onMessage.addListener((message, sender) => {
+browser.runtime.onMessage.addListener(async (message, sender) => {
   if (message.type === 'adzanFinished') {
+    await restoreAdzanSessionState();
     // The adzan player tab signals completion.
     // Close the tab (if still open) and schedule media resume.
     const tabToClose = adzanTabId;
     adzanTabId = null;
     adzanStartTime = null;
     adzanTotalDuration = 0;
+    await persistAdzanSessionState();
     
     if (tabToClose && tabToClose !== ADZAN_TAB_PENDING) {
       browser.tabs.remove(tabToClose).catch(() => {});
@@ -625,7 +721,9 @@ browser.runtime.onMessage.addListener((message, sender) => {
     // Store the total duration and reset start time when adzan/doa starts
     adzanTotalDuration = message.duration || 0;
     adzanStartTime = Date.now(); // Reset start time for accurate countdown
+    await persistAdzanSessionState();
   } else if (message.type === 'getAdzanStatus') {
+    await restoreAdzanSessionState();
     // Return adzan status to popup
     const isPlaying = adzanTabId !== null && adzanTabId !== ADZAN_TAB_PENDING;
     return Promise.resolve({
@@ -645,12 +743,14 @@ browser.runtime.onMessage.addListener((message, sender) => {
 // Detect adzan tab being closed manually by the user.
 // This is the RELIABLE way to know the tab is gone — we do NOT rely on
 // beforeunload messages, which are unreliable in extensions.
-browser.tabs.onRemoved.addListener((tabId) => {
+browser.tabs.onRemoved.addListener(async (tabId) => {
+  await restoreAdzanSessionState();
   if (tabId === adzanTabId) {
     console.log('Adzan tab was closed (tab ID:', tabId, ')');
     adzanTabId = null;
     adzanStartTime = null;
     adzanTotalDuration = 0;
+    await persistAdzanSessionState();
     scheduleUnmuteAlarm();
   }
 });
@@ -658,6 +758,7 @@ browser.tabs.onRemoved.addListener((tabId) => {
 // Unpause media and unmute tabs
 async function unpauseMediaAndUnmuteTabs() {
   try {
+    await restoreAdzanSessionState();
     // Unpause media in all paused tabs
     for (const tabId of pausedTabs) {
       try {
@@ -688,6 +789,7 @@ async function unpauseMediaAndUnmuteTabs() {
     // Clear arrays
     pausedTabs = [];
     mutedTabs = [];
+    await persistAdzanSessionState();
   } catch (error) {
     console.error('Error unpausing media and unmuting tabs:', error);
   }
@@ -719,6 +821,7 @@ async function unmuteTabs(tabIds) {
 
 async function initializeBackground() {
   try {
+    await restoreAdzanSessionState();
     ensureAlarms();
     
     const result = await browser.storage.local.get('prayerTimes');
