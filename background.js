@@ -591,10 +591,11 @@ async function playAdzanSound(muteTabs = false, adzanVolume = 100, prayerName = 
                   });
                   return pausedCount;
                 })();
-              `
+              `,
+              allFrames: true
             });
             
-            const pausedCount = (results && results[0]) || 0;
+            const pausedCount = Array.isArray(results) ? results.reduce((sum, count) => sum + (typeof count === 'number' ? count : 0), 0) : 0;
             
             // Also mute the tab as backup
             if (currentTab.audible) {
@@ -716,6 +717,7 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
       browser.tabs.remove(tabToClose).catch(() => {});
     }
     
+    // Schedule media resume 10 seconds after adzan completion.
     scheduleUnmuteAlarm();
   } else if (message.type === 'adzanStarted') {
     // Store the total duration and reset start time when adzan/doa starts
@@ -763,13 +765,17 @@ async function unpauseMediaAndUnmuteTabs() {
     for (const tabId of pausedTabs) {
       try {
         await browser.tabs.executeScript(tabId, {
+          allFrames: true,
           code: `
             (function() {
               const mediaElements = document.querySelectorAll('video, audio');
               let unpausedCount = 0;
               mediaElements.forEach(media => {
                 if (media.dataset.adzanPaused === 'true') {
-                  media.play();
+                  let playPromise = media.play();
+                  if (playPromise !== undefined) {
+                    playPromise.catch(e => console.log('Adzan unmute error:', e));
+                  }
                   delete media.dataset.adzanPaused;
                   unpausedCount++;
                 }
@@ -795,13 +801,12 @@ async function unpauseMediaAndUnmuteTabs() {
   }
 }
 
-// Schedule an alarm to unmute/unpause tabs.
+// Schedule an alarm to unmute/unpause tabs 10 seconds later.
 // Using browser.alarms instead of setTimeout because background pages
 // with "persistent": false can be suspended, killing any pending setTimeout.
 function scheduleUnmuteAlarm() {
-  // delayInMinutes minimum is implementation-dependent; Firefox allows
-  // fractional values.  0.15 ≈ 9 seconds — close enough to the old 10s.
-  browser.alarms.create(UNMUTE_ALARM, { delayInMinutes: 0.15 });
+  // Firefox reliably supports small fractional values. 10/60 = 10 seconds.
+  browser.alarms.create(UNMUTE_ALARM, { delayInMinutes: 10 / 60 });
 }
 
 // Unmute previously muted tabs
