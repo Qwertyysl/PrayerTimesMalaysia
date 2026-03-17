@@ -355,14 +355,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Listen for storage changes to sync theme across pages
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.darkMode) {
-    const darkMode = changes.darkMode.newValue;
-    if (darkMode) {
-      document.body.classList.add('dark-mode');
-      document.getElementById('theme-icon').textContent = '☀️';
-    } else {
-      document.body.classList.remove('dark-mode');
-      document.getElementById('theme-icon').textContent = '🌙';
+  if (area === 'local') {
+    if (changes.darkMode) {
+      const darkMode = changes.darkMode.newValue;
+      if (darkMode) {
+        document.body.classList.add('dark-mode');
+        document.getElementById('theme-icon').textContent = '☀️';
+      } else {
+        document.body.classList.remove('dark-mode');
+        document.getElementById('theme-icon').textContent = '🌙';
+      }
+    }
+    
+    if (changes.appTheme) {
+      const appTheme = changes.appTheme.newValue || 'ramadhan';
+      document.body.classList.remove('theme-classic', 'theme-ramadhan', 'theme-raya');
+      document.body.classList.add(`theme-${appTheme}`);
     }
   }
 });
@@ -370,8 +378,12 @@ browser.storage.onChanged.addListener((changes, area) => {
 // Load theme from storage
 async function loadTheme() {
   try {
-    const result = await browser.storage.local.get('darkMode');
+    const result = await browser.storage.local.get(['darkMode', 'appTheme']);
     const darkMode = result.darkMode || false;
+    const appTheme = result.appTheme || 'ramadhan';
+    
+    document.body.classList.remove('theme-classic', 'theme-ramadhan', 'theme-raya');
+    document.body.classList.add(`theme-${appTheme}`);
     
     if (darkMode) {
       document.body.classList.add('dark-mode');

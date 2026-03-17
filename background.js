@@ -353,7 +353,8 @@ async function checkNextPrayer() {
       'enableAthan',
       'muteTabsDuringAthan',
       'adzanVolume',
-      'enableDoa'
+      'enableDoa',
+      'appTheme'
     ]);
     
     if (!result.prayerTimes) {
@@ -378,11 +379,23 @@ async function checkNextPrayer() {
     }
     
     if (result.enableNotifications !== false) {
+      const appTheme = result.appTheme || 'ramadhan';
+      let title = 'Prayer Time';
+      let message = `It's time for ${currentPrayer.name} prayer`;
+      
+      if (appTheme === 'ramadhan') {
+        title = '☪️ Ramadan Prayer Time';
+        message = `Salam Ramadan! It's time for ${currentPrayer.name} prayer`;
+      } else if (appTheme === 'raya') {
+        title = '✨ Salam Aidilfitri';
+        message = `Maaf Zahir & Batin. It's time for ${currentPrayer.name} prayer`;
+      }
+      
       browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('icons/icon-48.png'),
-        title: 'Prayer Time',
-        message: `It's time for ${currentPrayer.name} prayer`
+        title: title,
+        message: message
       });
     }
     
@@ -404,7 +417,8 @@ async function checkMinuteWarnings() {
   try {
     const result = await browser.storage.local.get([
       'prayerTimes', 
-      'enableNotifications'
+      'enableNotifications',
+      'appTheme'
     ]);
     
     // Check if notifications are enabled
@@ -441,10 +455,19 @@ async function checkMinuteWarnings() {
         continue;
       }
       
+      const appTheme = result.appTheme || 'ramadhan';
+      let title = 'Prayer Time Reminder';
+      
+      if (appTheme === 'ramadhan') {
+        title = '☪️ Ramadan Reminder';
+      } else if (appTheme === 'raya') {
+        title = '✨ Aidilfitri Reminder';
+      }
+      
       browser.notifications.create({
         type: 'basic',
         iconUrl: browser.runtime.getURL('icons/icon-48.png'),
-        title: 'Prayer Time Reminder',
+        title: title,
         message: `${prayer.name} prayer in ${minutesRemaining} minute${minutesRemaining > 1 ? 's' : ''}`
       });
     }

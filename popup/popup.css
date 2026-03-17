@@ -30,6 +30,34 @@ body.dark-mode {
   --shadow-lg: 0 15px 30px rgba(0, 0, 0, 0.4);
 }
 
+/* Theme overrides */
+body.theme-classic {
+  --primary-color: #2980b9;
+  --primary-dark: #1f618d;
+  --accent-gold: #f39c12;
+}
+
+body.theme-classic.dark-mode {
+  --primary-color: #3498db;
+  --primary-dark: #2980b9;
+  --accent-gold: #f1c40f;
+}
+
+body.theme-raya {
+  --primary-color: #27ae60;
+  --primary-dark: #1e8449;
+  --accent-gold: #f1c40f;
+  --rad-border: rgba(39, 174, 96, 0.4);
+}
+
+body.theme-raya.dark-mode {
+  --primary-color: #2ecc71;
+  --primary-dark: #27ae60;
+  --accent-gold: #f39c12;
+  --rad-border: rgba(46, 204, 113, 0.2);
+}
+/* Theme Ramadhan uses default colors */
+
 body {
   width: 320px;
   margin: 0;

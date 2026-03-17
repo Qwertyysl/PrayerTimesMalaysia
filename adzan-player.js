@@ -19,8 +19,12 @@ document.getElementById('prayer-name').textContent = `${prayerName} Prayer`;
 
 async function applyThemeFromStorage() {
   try {
-    const result = await browser.storage.local.get('darkMode');
+    const result = await browser.storage.local.get(['darkMode', 'appTheme']);
     const darkMode = result.darkMode === true;
+    const appTheme = result.appTheme || 'ramadhan';
+    
+    document.body.classList.remove('theme-classic', 'theme-ramadhan', 'theme-raya');
+    document.body.classList.add(`theme-${appTheme}`);
     document.body.classList.toggle('dark-mode', darkMode);
   } catch (error) {
     console.error('Error applying theme in adzan player:', error);
@@ -28,8 +32,16 @@ async function applyThemeFromStorage() {
 }
 
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.darkMode) {
-    document.body.classList.toggle('dark-mode', changes.darkMode.newValue === true);
+  if (area === 'local') {
+    if (changes.darkMode) {
+      document.body.classList.toggle('dark-mode', changes.darkMode.newValue === true);
+    }
+    
+    if (changes.appTheme) {
+      const appTheme = changes.appTheme.newValue || 'ramadhan';
+      document.body.classList.remove('theme-classic', 'theme-ramadhan', 'theme-raya');
+      document.body.classList.add(`theme-${appTheme}`);
+    }
   }
 });
 

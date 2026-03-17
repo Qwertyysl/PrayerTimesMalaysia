@@ -108,12 +108,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Listen for storage changes to sync theme across pages
 browser.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.darkMode) {
-    const darkMode = changes.darkMode.newValue;
-    if (darkMode) {
-      document.body.classList.add('dark-mode');
-    } else {
-      document.body.classList.remove('dark-mode');
+  if (area === 'local') {
+    if (changes.darkMode) {
+      const darkMode = changes.darkMode.newValue;
+      if (darkMode) {
+        document.body.classList.add('dark-mode');
+      } else {
+        document.body.classList.remove('dark-mode');
+      }
+    }
+    
+    if (changes.appTheme) {
+      const appTheme = changes.appTheme.newValue || 'ramadhan';
+      document.body.classList.remove('theme-classic', 'theme-ramadhan', 'theme-raya');
+      document.body.classList.add(`theme-${appTheme}`);
+      
+      const editionText = document.getElementById('edition-text');
+      if (editionText) {
+        editionText.textContent = appTheme === 'raya' ? 'Hari Raya Edition' : (appTheme === 'classic' ? 'Classic Edition' : 'Ramadan Edition');
+      }
     }
   }
 });
@@ -130,7 +143,8 @@ function loadSettings() {
     'enableAthan',
     'muteTabsDuringAthan',
     'adzanVolume',
-    'developerMode'
+    'developerMode',
+    'appTheme'
   ]).then((result) => {
     // Set location (will be set after locations are loaded)
     if (result.selectedLocation) {
@@ -180,6 +194,12 @@ function loadSettings() {
     const developerMode = result.developerMode || false;
     document.getElementById('developer-mode').checked = developerMode;
     document.getElementById('test-section').style.display = developerMode ? 'block' : 'none';
+    
+    // Set theme
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) {
+      themeSelect.value = result.appTheme || 'ramadhan';
+    }
   });
 }
 
@@ -212,7 +232,8 @@ async function saveSettings() {
     enableAthan: enableAthan,
     muteTabsDuringAthan: document.getElementById('mute-tabs-during-athan').checked,
     adzanVolume: parseInt(document.getElementById('adzan-volume').value),
-    developerMode: document.getElementById('developer-mode').checked
+    developerMode: document.getElementById('developer-mode').checked,
+    appTheme: document.getElementById('theme-select') ? document.getElementById('theme-select').value : 'ramadhan'
   };
   
   try {
@@ -739,8 +760,17 @@ function finishTestAdzan() {
 // Load theme from storage
 async function loadTheme() {
   try {
-    const result = await browser.storage.local.get('darkMode');
+    const result = await browser.storage.local.get(['darkMode', 'appTheme']);
     const darkMode = result.darkMode || false;
+    const appTheme = result.appTheme || 'ramadhan';
+    
+    document.body.classList.remove('theme-classic', 'theme-ramadhan', 'theme-raya');
+    document.body.classList.add(`theme-${appTheme}`);
+    
+    const editionText = document.getElementById('edition-text');
+    if (editionText) {
+      editionText.textContent = appTheme === 'raya' ? 'Hari Raya Edition' : (appTheme === 'classic' ? 'Classic Edition' : 'Ramadan Edition');
+    }
     
     if (darkMode) {
       document.body.classList.add('dark-mode');
