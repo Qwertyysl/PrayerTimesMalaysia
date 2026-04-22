@@ -238,7 +238,7 @@ function isSameMinute(firstDate, secondDate) {
 
 function ensureAlarms() {
   browser.alarms.create(ALARM_NAMES.UPDATE_PRAYER_TIMES, {
-    periodInMinutes: 60
+    periodInMinutes: 30
   });
   
   // Browser alarm APIs reliably support one-minute intervals.
@@ -267,12 +267,42 @@ browser.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+// Check if stored prayer times are stale (from a different day)
+function isPrayerTimesStale(prayerTimes, lastUpdated) {
+  if (!prayerTimes || !lastUpdated) {
+    return true;
+  }
+  
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+  
+  // Check if the stored date matches today
+  if (prayerTimes.date && prayerTimes.date !== todayStr) {
+    return true;
+  }
+  
+  // Also check if lastUpdated was more than 6 hours ago
+  const lastUpdatedDate = new Date(lastUpdated);
+  const hoursSinceUpdate = (now.getTime() - lastUpdatedDate.getTime()) / (1000 * 60 * 60);
+  if (hoursSinceUpdate > 6) {
+    return true;
+  }
+  
+  return false;
+}
+
 // Update prayer times from API
-async function updatePrayerTimes() {
+async function updatePrayerTimes(forceRefresh = false) {
   try {
-    // Get selected location from storage
-    const result = await browser.storage.local.get('selectedLocation');
+    // Get selected location and current cached data from storage
+    const result = await browser.storage.local.get(['selectedLocation', 'prayerTimes', 'lastUpdated']);
     const locationCode = result.selectedLocation || 'trg01'; // Default to Kuala Terengganu
+    
+    // Skip fetch if data is still fresh and not forced
+    if (!forceRefresh && result.prayerTimes && !isPrayerTimesStale(result.prayerTimes, result.lastUpdated)) {
+      updateBadgeText(result.prayerTimes);
+      return result.prayerTimes;
+    }
     
     // Get prayer times from API
     const prayerTimes = await PrayerTimesCalculator.getPrayerTimes(locationCode);
@@ -285,8 +315,11 @@ async function updatePrayerTimes() {
     
     // Update badge with next prayer
     updateBadgeText(prayerTimes);
+    
+    return prayerTimes;
   } catch (error) {
     console.error('Error updating prayer times:', error);
+    return null;
   }
 }
 
@@ -349,6 +382,7 @@ async function checkNextPrayer() {
     
     const result = await browser.storage.local.get([
       'prayerTimes', 
+      'lastUpdated',
       'enableNotifications', 
       'enableAthan',
       'muteTabsDuringAthan',
@@ -358,7 +392,21 @@ async function checkNextPrayer() {
     ]);
     
     if (!result.prayerTimes) {
+      // No data at all, try to fetch
+      await updatePrayerTimes(true);
       return;
+    }
+    
+    // Auto-refresh if data is stale (e.g. past midnight)
+    if (isPrayerTimesStale(result.prayerTimes, result.lastUpdated)) {
+      await updatePrayerTimes(true);
+      // Re-read the updated data
+      const refreshed = await browser.storage.local.get('prayerTimes');
+      if (refreshed.prayerTimes) {
+        result.prayerTimes = refreshed.prayerTimes;
+      } else {
+        return;
+      }
     }
     
     const now = new Date();
@@ -417,6 +465,7 @@ async function checkMinuteWarnings() {
   try {
     const result = await browser.storage.local.get([
       'prayerTimes', 
+      'lastUpdated',
       'enableNotifications',
       'appTheme'
     ]);
@@ -428,6 +477,17 @@ async function checkMinuteWarnings() {
     
     if (!result.prayerTimes) {
       return;
+    }
+    
+    // Auto-refresh if data is stale
+    if (isPrayerTimesStale(result.prayerTimes, result.lastUpdated)) {
+      await updatePrayerTimes(true);
+      const refreshed = await browser.storage.local.get('prayerTimes');
+      if (refreshed.prayerTimes) {
+        result.prayerTimes = refreshed.prayerTimes;
+      } else {
+        return;
+      }
     }
     
     const now = new Date();
@@ -760,8 +820,12 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
   } else if (message.type === 'stopAdzan') {
     stopAdzan();
   } else if (message.type === 'updatePrayerTimes') {
-    // Update prayer times when location changes
-    updatePrayerTimes();
+    // Update prayer times when location changes (force refresh)
+    updatePrayerTimes(true);
+  } else if (message.type === 'forceUpdatePrayerTimes') {
+    // Force refresh prayer times from API and return the result
+    const prayerTimes = await updatePrayerTimes(true);
+    return Promise.resolve({ prayerTimes: prayerTimes });
   }
 });
 
@@ -852,13 +916,14 @@ async function initializeBackground() {
     await restoreAdzanSessionState();
     ensureAlarms();
     
-    const result = await browser.storage.local.get('prayerTimes');
+    // Always check if prayer times are stale on startup
+    const result = await browser.storage.local.get(['prayerTimes', 'lastUpdated']);
     
-    if (result.prayerTimes) {
+    if (result.prayerTimes && !isPrayerTimesStale(result.prayerTimes, result.lastUpdated)) {
       updateBadgeText(result.prayerTimes);
     } else {
-      // Trigger initial update
-      await updatePrayerTimes();
+      // Data is stale or missing, force fresh fetch
+      await updatePrayerTimes(true);
     }
     
     // Run checks once immediately in case alarms were delayed.

@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Refresh button event listener
   refreshButton.addEventListener('click', function() {
-    updatePrayerTimes();
+    forceRefreshPrayerTimes();
   });
   
   // Settings button event listener
@@ -46,8 +46,49 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // Update prayer times
-  function updatePrayerTimes() {
+  // Force refresh prayer times from API via background script
+  async function forceRefreshPrayerTimes() {
+    console.log('Force refreshing prayer times from API...');
+    
+    // Show loading state
+    subuhTimeElement.textContent = 'Loading...';
+    zohorTimeElement.textContent = 'Loading...';
+    asarTimeElement.textContent = 'Loading...';
+    maghribTimeElement.textContent = 'Loading...';
+    ishaTimeElement.textContent = 'Loading...';
+    
+    try {
+      // Ask background script to force-fetch from API
+      const response = await browser.runtime.sendMessage({ type: 'forceUpdatePrayerTimes' });
+      
+      if (response && response.prayerTimes) {
+        displayPrayerTimes(response.prayerTimes);
+      } else {
+        // Fallback: try fetching directly
+        fetchPrayerTimesFromAPI();
+      }
+    } catch (error) {
+      console.error('Error force refreshing prayer times:', error);
+      fetchPrayerTimesFromAPI();
+    }
+  }
+
+  // Display prayer times and calculate countdown
+  function displayPrayerTimes(times) {
+    subuhTimeElement.textContent = times.subuh || '--:--';
+    zohorTimeElement.textContent = times.zohor || '--:--';
+    asarTimeElement.textContent = times.asar || '--:--';
+    maghribTimeElement.textContent = times.maghrib || '--:--';
+    ishaTimeElement.textContent = times.isha || '--:--';
+    
+    console.log('Displaying prayer times:', times);
+    
+    // Calculate next prayer and countdown
+    calculateNextPrayerAndCountdown(times);
+  }
+
+  // Update prayer times — checks staleness and fetches if needed
+  async function updatePrayerTimes() {
     console.log('Updating prayer times in popup...');
     
     // Show loading state
@@ -57,35 +98,65 @@ document.addEventListener('DOMContentLoaded', function() {
     maghribTimeElement.textContent = 'Loading...';
     ishaTimeElement.textContent = 'Loading...';
     
-    // Get prayer times and location from storage
-    browser.storage.local.get(['prayerTimes', 'selectedLocation']).then((result) => {
+    try {
+      // Get prayer times and location from storage
+      const result = await browser.storage.local.get(['prayerTimes', 'selectedLocation', 'lastUpdated']);
+      
       // Display location code
       if (result.selectedLocation) {
         document.getElementById('location-code').textContent = `(${result.selectedLocation.toUpperCase()})`;
       }
       console.log('Retrieved from storage:', result);
       
-      if (result.prayerTimes) {
-        // Display prayer times
-        const times = result.prayerTimes;
-        subuhTimeElement.textContent = times.subuh || '--:--';
-        zohorTimeElement.textContent = times.zohor || '--:--';
-        asarTimeElement.textContent = times.asar || '--:--';
-        maghribTimeElement.textContent = times.maghrib || '--:--';
-        ishaTimeElement.textContent = times.isha || '--:--';
-        
-        console.log('Displaying prayer times:', times);
-        
-        // Calculate next prayer and countdown
-        calculateNextPrayerAndCountdown(times);
+      // Check if stored data is stale (different day or too old)
+      const isStale = isPrayerTimesStale(result.prayerTimes, result.lastUpdated);
+      
+      if (result.prayerTimes && !isStale) {
+        // Data is fresh, display it
+        displayPrayerTimes(result.prayerTimes);
       } else {
-        // If no data, try to fetch from API directly
-        fetchPrayerTimesFromAPI();
+        // Data is stale or missing, force refresh via background script
+        console.log('Prayer times are stale or missing, forcing refresh...');
+        try {
+          const response = await browser.runtime.sendMessage({ type: 'forceUpdatePrayerTimes' });
+          if (response && response.prayerTimes) {
+            displayPrayerTimes(response.prayerTimes);
+          } else {
+            fetchPrayerTimesFromAPI();
+          }
+        } catch (msgError) {
+          console.error('Error requesting prayer times from background:', msgError);
+          fetchPrayerTimesFromAPI();
+        }
       }
-    }).catch((error) => {
+    } catch (error) {
       console.error('Error retrieving prayer times from storage:', error);
       fetchPrayerTimesFromAPI();
-    });
+    }
+  }
+
+  // Check if stored prayer times are stale (from a different day)
+  function isPrayerTimesStale(prayerTimes, lastUpdated) {
+    if (!prayerTimes || !lastUpdated) {
+      return true;
+    }
+    
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+    
+    // Check if the stored date matches today
+    if (prayerTimes.date && prayerTimes.date !== todayStr) {
+      return true;
+    }
+    
+    // Also check if lastUpdated was more than 6 hours ago
+    const lastUpdatedDate = new Date(lastUpdated);
+    const hoursSinceUpdate = (now.getTime() - lastUpdatedDate.getTime()) / (1000 * 60 * 60);
+    if (hoursSinceUpdate > 6) {
+      return true;
+    }
+    
+    return false;
   }
 
   // Fetch prayer times directly from API
@@ -371,6 +442,35 @@ browser.storage.onChanged.addListener((changes, area) => {
       const appTheme = changes.appTheme.newValue || 'ramadhan';
       document.body.classList.remove('theme-classic', 'theme-ramadhan', 'theme-raya');
       document.body.classList.add(`theme-${appTheme}`);
+    }
+    
+    // Auto-update popup when prayer times are updated in the background
+    if (changes.prayerTimes && changes.prayerTimes.newValue) {
+      const times = changes.prayerTimes.newValue;
+      const subuhEl = document.getElementById('subuh-time');
+      const zohorEl = document.getElementById('zohor-time');
+      const asarEl = document.getElementById('asar-time');
+      const maghribEl = document.getElementById('maghrib-time');
+      const ishaEl = document.getElementById('isha-time');
+      
+      if (subuhEl) {
+        subuhEl.textContent = times.subuh || '--:--';
+        zohorEl.textContent = times.zohor || '--:--';
+        asarEl.textContent = times.asar || '--:--';
+        maghribEl.textContent = times.maghrib || '--:--';
+        ishaEl.textContent = times.isha || '--:--';
+      }
+      
+      // Recalculate next prayer countdown
+      if (typeof PrayerTimesCalculator !== 'undefined') {
+        const nextPrayerInfo = PrayerTimesCalculator.getNextPrayer(times);
+        const nextPrayerNameEl = document.getElementById('next-prayer-name');
+        const nextPrayerTimeEl = document.getElementById('next-prayer-time');
+        if (nextPrayerNameEl) {
+          nextPrayerNameEl.textContent = nextPrayerInfo.name || '--';
+          nextPrayerTimeEl.textContent = nextPrayerInfo.time || '--:--';
+        }
+      }
     }
   }
 });
